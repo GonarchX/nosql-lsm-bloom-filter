@@ -45,11 +45,11 @@ public class BloomFilterUtils {
      *         {@code false}, если элемент точно отсутствует
      */
     public static boolean contains(long k, long[] longs, MemorySegment key) {
-        byte[] keyBytes = key.toArray(ValueLayout.JAVA_BYTE);
+//        byte[] keyBytes = key.asByteBuffer().array();
         int m = longs.length * Long.SIZE; // Общее количество битов
 
         for (int i = 0; i < k; i++) {
-            int hash = hashCode(keyBytes, i);
+            int hash = hashCode(key, (int)key.byteSize(), i);
             int bitIndex = Math.abs(hash % m);
 
             int longIndex = bitIndex / Long.SIZE;
@@ -70,7 +70,7 @@ public class BloomFilterUtils {
      * @param seed сдвиг для получения разных хешей
      * @return хеш-код в формате {@code int}
      */
-    public static int hashCode(byte[] data, int seed) {
-        return (int) MurmurHash2.hash64(data, data.length, seed);
+    public static int hashCode(MemorySegment data, int length, int seed) {
+        return (int) MurmurHash2.hash64(data, length, seed);
     }
 }

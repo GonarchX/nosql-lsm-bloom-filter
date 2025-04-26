@@ -24,8 +24,8 @@ public class BloomFilter {
     /**
      * Конструктор Bloom-фильтра.
      *
-     * @param expectedInsertions   ожидаемое количество элементов
-     * @param falsePositiveRate    требуемая вероятность ложноположительного срабатывания
+     * @param expectedInsertions ожидаемое количество элементов
+     * @param falsePositiveRate  требуемая вероятность ложноположительного срабатывания
      */
     public BloomFilter(int expectedInsertions, double falsePositiveRate) {
         int calculatedM = (int) Math.ceil(-expectedInsertions * Math.log(falsePositiveRate) / Math.pow(Math.log(2), 2));
@@ -41,9 +41,9 @@ public class BloomFilter {
      * @param key элемент, который необходимо добавить
      */
     public void add(MemorySegment key) {
-        byte[] keyBytes = key.toArray(ValueLayout.JAVA_BYTE);
+//        byte[] keyBytes = key.toArray(ValueLayout.JAVA_BYTE);
         for (int i = 0; i < k; i++) {
-            int hash = BloomFilterUtils.hashCode(keyBytes, i);
+            int hash = BloomFilterUtils.hashCode(key, (int) key.byteSize(), i);
             int index = Math.abs(hash % m);
             bitSet.set(index);
         }

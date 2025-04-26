@@ -15,11 +15,11 @@ public class BloomFilterBenchmarkTest extends BaseTest {
     private static final double UNEXIST_ENTITY_GET_PROBABILITY = 0.5;
     private static final double FALSE_POSITIVE_RATE = 0.001;
     private static final int EXPECTED_INSERTIONS = 100_000;
-    private static final int ENTRIES_PER_TABLE = 1_000;
-    private static final int SSTABLES_NUMBER = 100;
+    private static final int ENTRIES_PER_TABLE = 100_000;
+    private static final int SSTABLES_NUMBER = 1;
     private static final boolean IS_ENABLED = true;
 
-    private static final int BENCHMARK_ITERATIONS = 0;
+    private static final int BENCHMARK_ITERATIONS = 100;
 
     @DaoTest(stage = 6)
     @Timeout(value = 30, unit = TimeUnit.MINUTES)

@@ -1,6 +1,8 @@
 package ru.vk.itmo.reference;
 
 import ru.vk.itmo.Entry;
+import ru.vk.itmo.reference.bloomfilter.BloomFilter;
+import ru.vk.itmo.reference.bloomfilter.BloomFilterUtils;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -42,6 +44,7 @@ final class SSTableWriter {
             final int sequence,
             final Iterator<Entry<MemorySegment>> entries) throws IOException {
         // Write to temporary files
+        final Path tempFilterName = SSTables.tempFilterName(baseDir, sequence);
         final Path tempIndexName = SSTables.tempIndexName(baseDir, sequence);
         final Path tempDataName = SSTables.tempDataName(baseDir, sequence);
 
@@ -49,11 +52,32 @@ final class SSTableWriter {
         Files.deleteIfExists(tempIndexName);
         Files.deleteIfExists(tempDataName);
 
+        // Здесь представлен типичный трейд-офф: экономить память или цпу. Зависит он от следующих факторов.
+        // Один из способов создания Блум фильтра:
+        // пройти заранее по всем записям в итераторе, чтобы узнать необходимый размер Блум фильтра.
+        // Однако из-за дополнительного прохода процесс записи замедлится,
+        // зато размер фильтра будет оптимальным (сэкономим память + проверка наличия записи в фильтре будет проходить с указанной нами вероятностью false-positive).
+        //
+        // Другой способ:
+        // заранее аллоцировать Блум фильтр, не зная сколько на самом деле придет значений.
+        // Такой способ быстрее, однако размер фильтра часто будет не соответствовать количеству записей в SSTable:
+        // мало записей в SSTable, фильтр большой => избыточный расход памяти,
+        // много записей в SSTable, фильтр маленький => чаще false-positive ответы от фильтра.
+        //
+        // Из-за особенностей референсной реализации, проитерироваться несколько раз не получится,
+        // т.к. SSTable итераторы читают данные напрямую из диска. Поэтому создаем Блум фильтр заранее.
+        BloomFilter bloomFilter = BloomFilter.newFilter();
+
         // Iterate in a single pass!
         // Will write through FileChannel despite extra memory copying and
         // no buffering (which may be implemented later).
         // Looking forward to MemorySegment facilities in FileChannel!
-        try (OutputStream index =
+        try (OutputStream filter =
+                     new BufferedOutputStream(
+                             new FileOutputStream(
+                                     tempFilterName.toFile()),
+                             BUFFER_SIZE);
+             OutputStream index =
                      new BufferedOutputStream(
                              new FileOutputStream(
                                      tempIndexName.toFile()),
@@ -73,11 +97,25 @@ final class SSTableWriter {
                 // Then write the entry
                 final Entry<MemorySegment> entry = entries.next();
                 entryOffset += writeEntry(entry, data);
+
+                // Добавляем все записи в BloomFilter, даже удаленные (value == Tombstone).
+                // Считаю, что лучше получить информацию о том, что запись удалена, чем посчитать, что ее вообще не было.
+                bloomFilter.add(entry.key());
             }
+
+            writeFilter(bloomFilter, filter);
         }
 
         // Publish files atomically
-        // FIRST index, LAST data
+        final Path filterName =
+                SSTables.filterName(
+                        baseDir,
+                        sequence);
+        Files.move(
+                tempFilterName,
+                filterName,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING);
         final Path indexName =
                 SSTables.indexName(
                         baseDir,
@@ -162,5 +200,19 @@ final class SSTableWriter {
         }
 
         return result;
+    }
+
+    private void writeFilter(
+            BloomFilter bloomFilter,
+            OutputStream os) throws IOException {
+        // Write filter metadata (filter size, hash functions count)
+        long[] longs = BloomFilterUtils.toLongArray(bloomFilter.getBitSet());
+        writeLong(longs.length, os);
+        writeLong(bloomFilter.getHashCount(), os);
+
+        // Write filter value
+        for (Long longPart : longs) {
+            writeLong(longPart, os);
+        }
     }
 }

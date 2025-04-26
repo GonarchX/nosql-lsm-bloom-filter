@@ -20,6 +20,7 @@ import java.util.stream.Stream;
  * @author incubos
  */
 final class SSTables {
+    public static final String FILTER_SUFFIX = ".filter";
     public static final String INDEX_SUFFIX = ".index";
     public static final String DATA_SUFFIX = ".data";
     public static final long TOMBSTONE_VALUE_LENGTH = -1L;
@@ -33,6 +34,12 @@ final class SSTables {
         // Only static methods
     }
 
+    static Path filterName(
+            final Path baseDir,
+            final int sequence) {
+        return baseDir.resolve(sequence + FILTER_SUFFIX);
+    }
+
     static Path indexName(
             final Path baseDir,
             final int sequence) {
@@ -43,6 +50,12 @@ final class SSTables {
             final Path baseDir,
             final int sequence) {
         return baseDir.resolve(sequence + DATA_SUFFIX);
+    }
+
+    public static Path tempFilterName(
+            final Path baseDir,
+            final int sequence) {
+        return baseDir.resolve(sequence + FILTER_SUFFIX + TEMP_SUFFIX);
     }
 
     static Path tempIndexName(
@@ -101,6 +114,10 @@ final class SSTables {
             final Arena arena,
             final Path baseDir,
             final int sequence) throws IOException {
+        final MemorySegment filter =
+                mapReadOnly(
+                        arena,
+                        filterName(baseDir, sequence));
         final MemorySegment index =
                 mapReadOnly(
                         arena,
@@ -112,6 +129,7 @@ final class SSTables {
 
         return new SSTable(
                 sequence,
+                filter,
                 index,
                 data);
     }
@@ -144,6 +162,13 @@ final class SSTables {
             final int from,
             final int to) throws IOException {
         // Build to progress to the same outcome
+        if (Files.exists(filterName(baseDir, from))) {
+            Files.move(
+                    filterName(baseDir, from),
+                    filterName(baseDir, to),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
+        }
         if (Files.exists(indexName(baseDir, from))) {
             Files.move(
                     indexName(baseDir, from),

@@ -2,11 +2,14 @@ package ru.vk.itmo.reference;
 
 import ru.vk.itmo.BaseEntry;
 import ru.vk.itmo.Entry;
+import ru.vk.itmo.reference.bloomfilter.BloomFilterBenchmarkConfig;
+import ru.vk.itmo.reference.bloomfilter.BloomFilterUtils;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
@@ -18,23 +21,30 @@ import java.util.NoSuchElementException;
 final class SSTable {
     final int sequence;
 
+    private final MemorySegment filter;
     private final MemorySegment index;
     private final MemorySegment data;
     private final long size;
 
+    private final Map.Entry<Long, long[]> bloomFilterData;
+
     SSTable(
             final int sequence,
+            final MemorySegment filter,
             final MemorySegment index,
             final MemorySegment data) {
         this.sequence = sequence;
+        this.filter = filter;
         this.index = index;
         this.data = data;
         this.size = index.byteSize() / Long.BYTES;
+        this.bloomFilterData = getBloomFilterData();
     }
 
     SSTable withSequence(final int sequence) {
         return new SSTable(
                 sequence,
+                filter,
                 index,
                 data);
     }
@@ -88,6 +98,29 @@ final class SSTable {
                 offset);
     }
 
+    /**
+     * Извлекает информацию о Bloom-фильтре для SSTable: количество хеш-функций и битовый массив.
+     * <p>
+     * Формат хранения данных в файле:
+     * <pre>
+     * | LONG m | LONG k | [m * 64] BYTE array |
+     * </pre>
+     *
+     * @return пара {@link Map.Entry}, где ключ — количество хеш-функций {@code k},
+     *         значение — битовый массив {@code long[]} размером {@code m}
+     */
+    public Map.Entry<Long, long[]> getBloomFilterData() {
+        long m = filter.get(ValueLayout.OfLong.JAVA_LONG_UNALIGNED, 0);
+        long k = filter.get(ValueLayout.OfLong.JAVA_LONG_UNALIGNED, Long.BYTES);
+        long offset = 2L * Long.BYTES;
+
+        MemorySegment filterSegment = filter.asSlice(offset, m * Long.BYTES);
+        long[] bits = filterSegment.toArray(ValueLayout.JAVA_LONG);
+
+        return Map.entry(k, bits);
+    }
+
+
     Iterator<Entry<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
@@ -135,6 +168,10 @@ final class SSTable {
     }
 
     Entry<MemorySegment> get(final MemorySegment key) {
+        if (BloomFilterBenchmarkConfig.IS_ENABLED && !BloomFilterUtils.contains(bloomFilterData.getKey(), bloomFilterData.getValue(), key)){
+            return null;
+        }
+
         final long entry = entryBinarySearch(key);
         if (entry < 0) {
             return null;

@@ -140,7 +140,7 @@ public @interface DaoTest {
 
         private Dao<String, Entry<String>> createDao(ExtensionContext context, Class<?> clazz) throws IOException, InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
             Path tmp = Files.createTempDirectory("dao");
-            long flushThreshold = 1 << 20; // 1 MB
+            long flushThreshold = 16 << 20; // 1 MB
 
             DaoFactory.Factory<?, ?> f = (DaoFactory.Factory<?, ?>) clazz.getDeclaredConstructor().newInstance();
             Dao<String, Entry<String>> dao = f.createStringDao(new Config(tmp, flushThreshold));
